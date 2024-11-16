@@ -10,6 +10,7 @@
 #define BLUE_LED LED1
 #define GREEN_LED LED2
 #define RED_LED LED3
+#define DEBUG_LED 13
 
 //#define DEBUG_LED 13  // The LED on the teensy board
 
