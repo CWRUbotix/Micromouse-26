@@ -19,6 +19,7 @@ typedef enum motor_t {
 #undef log
 #undef logf
 #undef logln
+// #define PLOT_PID
 
 #ifdef TEST
   #define log(...) Serial.print(__VA_ARGS__)
@@ -509,13 +510,28 @@ int moveForward(int number) {
     // When the angle is 0.1, we need to bump left power by like 5, so P of 20
     // (A positive angle means that we're turned left)
     angularVelocity = p_controller(80.0, currentAngle, 0, -127.0, 127.0);
+    #ifdef PLOT_PID
+      Serial.print("Angular Velocity PID Out:");
+      Serial.print(angularVelocity);
+      Serial.print(",")
+    #endif
 
     // With a distance of 254 (one square), we've chose a P of 12.25
     //  so it saturates velocity for the majority of the distance
     velocity = p_controller(12.25, currentDistance, goalDistance, -speed, speed);
+    #ifdef PLOT_PID
+      Serial.print("Velocity (Forward) PID Out:");
+      Serial.print(velocity);
+      Serial.print(",")
+    #endif
 
     // With a center off set of 10mm, that's a velocity of 5
     centerVelocity = p_controller(0.5, centerOffset, 0, -50, 50);
+    #ifdef PLOT_PID
+      Serial.print("Velocity (Lateral) PID Output:");
+      Serial.print(centerVelocity);
+      Serial.print(",")
+    #endif
 
     angularVelocity += centerVelocity;
 
@@ -525,6 +541,20 @@ int moveForward(int number) {
     // Scale by 0.7 to compensate for over-volted motors
     int velocityLeft = (int)(-angularVelocity / 2.0 * 0.7) + velocity;
     int velocityRight = (int)(angularVelocity / 2.0 * 0.7) + velocity;
+
+    #ifdef PLOT_PID
+      Serial.print("Left Motor Input:");
+      Serial.print(velocityLeft);
+      Serial.print(",")
+      Serial.print("Right Motor Input:");
+      Serial.print("velocityRight");
+      Serial.print(",")
+      Serial.print("Motor Lower Bound:");
+      Serial.print(0);
+      Serial.print(",")
+      Serial.print("Motor Upper Bound:");
+      Serial.println(255);
+    #endif
 
     setMotor(LEFT_MOTOR, velocityLeft);
     setMotor(RIGHT_MOTOR, velocityRight);
