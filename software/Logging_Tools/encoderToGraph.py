@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-df = pd.read_csv('arduino_data.csv', header=0, delimiter = ',')
+df = pd.read_csv('Logs/arduino_data.csv', header=0, delimiter = ',')
 plt.rcParams["figure.autolayout"] = True
 figure, axis = plt.subplots(1, 3)
 
