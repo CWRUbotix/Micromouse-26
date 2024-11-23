@@ -665,15 +665,9 @@ void greenLights(){
     delay(50);
 }
 /* ---- MAIN ---- */
-void loop() {
-    //movingTurnRight();
-    //movingTurnLeft();
-    //coolLights();
-    //coolLights();
-
+void log_velocities(){
   float encoderToMeter = wheelRadius/50.00*PI/12.00/gearRatio;
-  while(!digitalRead(START_BUTTON)); 
-  
+  Serial.println("Left Encoder,Left Wheel Speed,Right Encoder,Right Wheel Speed,Analog Value,Time");
   for (int voltage = 255; voltage > 15; voltage -=40)
   {
     int t = 1;
@@ -687,26 +681,28 @@ void loop() {
     analogWrite(MOTORLEFT_2, voltage);
     analogWrite(MOTORRIGHT_1, 0);
     analogWrite(MOTORRIGHT_2, voltage);
-
-    delay(10);
-    while (t<300)
+    while (t<5000)
     {
       Serial.print(leftEncoder.read()*encoderToMeter);
       Serial.print(",");
-      Serial.print(leftEncoder.read()*encoderToMeter/(t/100.00));
+      Serial.print(leftEncoder.read()*encoderToMeter/(t/1000.00));
       Serial.print(",");
       Serial.print(rightEncoder.read()*encoderToMeter);
       Serial.print(",");
-      Serial.print(rightEncoder.read()*encoderToMeter/(t/100.00));
+      Serial.print(rightEncoder.read()*encoderToMeter/(t/1000.00));
       Serial.print(",");
       Serial.print(voltage);
       Serial.print(",");
-      Serial.println(10*t);
-      delay(10);
+      Serial.println(t);
+      delay(1);
       t++;
     }
   }
   setMotor(LEFT_MOTOR, 0);
   setMotor(RIGHT_MOTOR, 0);
-  while (true);
+}
+
+void loop() {
+  log_velocities();
+  while(true);
 }

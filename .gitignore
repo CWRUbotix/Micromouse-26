@@ -48,3 +48,4 @@
 
 # VS Files
 .vscode/
+.venv
