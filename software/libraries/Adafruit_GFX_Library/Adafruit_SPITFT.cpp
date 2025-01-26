@@ -31,7 +31,8 @@
  * BSD license, all text here must be included in any redistribution.
  */
 
-#if !defined(__AVR_ATtiny85__) // Not for ATtiny, at all
+// Not for ATtiny, at all
+#if !defined(__AVR_ATtiny85__) && !defined(__AVR_ATtiny84__)
 
 #include "Adafruit_SPITFT.h"
 
@@ -1037,6 +1038,15 @@ void Adafruit_SPITFT::writePixels(uint16_t *colors, uint32_t len, bool block,
     spi_write_blocking(pi_spi, (uint8_t *)colors, len * 2);
   }
   return;
+#elif defined(ARDUINO_ARCH_RTTHREAD)
+  if (!bigEndian) {
+    swapBytes(colors, len); // convert little-to-big endian for display
+  }
+  hwspi._spi->transfer(colors, 2 * len);
+  if (!bigEndian) {
+    swapBytes(colors, len); // big-to-little endian to restore pixel buffer
+  }
+  return;
 #elif defined(USE_SPI_DMA) &&                                                  \
     (defined(__SAMD51__) || defined(ARDUINO_SAMD_ZERO))
   if ((connection == TFT_HARD_SPI) || (connection == TFT_PARALLEL)) {
@@ -1244,7 +1254,44 @@ void Adafruit_SPITFT::writeColor(uint16_t color, uint32_t len) {
     rtos_free(pixbuf);
     return;
   }
-#else                      // !ESP32
+#elif defined(ARDUINO_ARCH_RTTHREAD)
+  uint16_t pixbufcount;
+  uint16_t *pixbuf;
+  int16_t lines = height() / 4;
+#define QUICKPATH_MAX_LEN 16
+  uint16_t quickpath_buffer[QUICKPATH_MAX_LEN];
+
+  do {
+    pixbufcount = min(len, (lines * width()));
+    if (pixbufcount > QUICKPATH_MAX_LEN) {
+      pixbuf = (uint16_t *)rt_malloc(2 * pixbufcount);
+    } else {
+      pixbuf = quickpath_buffer;
+    }
+    lines -= 2;
+  } while (!pixbuf && lines > 0);
+
+  if (pixbuf) {
+    uint16_t const swap_color = __builtin_bswap16(color);
+
+    while (len) {
+      uint16_t count = min(len, pixbufcount);
+      // fill buffer with color
+      for (uint16_t i = 0; i < count; i++) {
+        pixbuf[i] = swap_color;
+      }
+      // Don't need to swap color inside the function
+      // It has been done outside this function
+      writePixels(pixbuf, count, true, true);
+      len -= count;
+    }
+    if (pixbufcount > QUICKPATH_MAX_LEN) {
+      rt_free(pixbuf);
+    }
+#undef QUICKPATH_MAX_LEN
+    return;
+  }
+#else // !ESP32
 #if defined(USE_SPI_DMA) && (defined(__SAMD51__) || defined(ARDUINO_SAMD_ZERO))
   if (((connection == TFT_HARD_SPI) || (connection == TFT_PARALLEL)) &&
       (len >= 16)) { // Don't bother with DMA on short pixel runs
@@ -1348,7 +1395,7 @@ void Adafruit_SPITFT::writeColor(uint16_t color, uint32_t len) {
       if (pixelsThisPass > 50000)
         pixelsThisPass = 50000;
       len -= pixelsThisPass;
-      yield(); // Periodic yield() on long fills
+      delay(1); // Periodic delay on long fills
       while (pixelsThisPass--) {
         hwspi._spi->write(hi);
         hwspi._spi->write(lo);
@@ -2305,10 +2352,6 @@ inline void Adafruit_SPITFT::SPI_MOSI_HIGH(void) {
 #endif // end !HAS_PORT_SET_CLR
 #else  // !USE_FAST_PINIO
   digitalWrite(swspi._mosi, HIGH);
-#if defined(ESP32)
-  for (volatile uint8_t i = 0; i < 1; i++)
-    ;
-#endif // end ESP32
 #endif // end !USE_FAST_PINIO
 }
 
@@ -2328,10 +2371,6 @@ inline void Adafruit_SPITFT::SPI_MOSI_LOW(void) {
 #endif // end !HAS_PORT_SET_CLR
 #else  // !USE_FAST_PINIO
   digitalWrite(swspi._mosi, LOW);
-#if defined(ESP32)
-  for (volatile uint8_t i = 0; i < 1; i++)
-    ;
-#endif // end ESP32
 #endif // end !USE_FAST_PINIO
 }
 
@@ -2343,22 +2382,14 @@ inline void Adafruit_SPITFT::SPI_SCK_HIGH(void) {
 #if defined(HAS_PORT_SET_CLR)
 #if defined(KINETISK)
   *swspi.sckPortSet = 1;
-#else                                                // !KINETISK
+#else // !KINETISK
   *swspi.sckPortSet = swspi.sckPinMask;
-#if defined(__IMXRT1052__) || defined(__IMXRT1062__) // Teensy 4.x
-  for (volatile uint8_t i = 0; i < 1; i++)
-    ;
-#endif
 #endif
 #else  // !HAS_PORT_SET_CLR
   *swspi.sckPort |= swspi.sckPinMaskSet;
 #endif // end !HAS_PORT_SET_CLR
 #else  // !USE_FAST_PINIO
   digitalWrite(swspi._sck, HIGH);
-#if defined(ESP32)
-  for (volatile uint8_t i = 0; i < 1; i++)
-    ;
-#endif // end ESP32
 #endif // end !USE_FAST_PINIO
 }
 
@@ -2370,22 +2401,14 @@ inline void Adafruit_SPITFT::SPI_SCK_LOW(void) {
 #if defined(HAS_PORT_SET_CLR)
 #if defined(KINETISK)
   *swspi.sckPortClr = 1;
-#else                                                // !KINETISK
+#else // !KINETISK
   *swspi.sckPortClr = swspi.sckPinMask;
-#if defined(__IMXRT1052__) || defined(__IMXRT1062__) // Teensy 4.x
-  for (volatile uint8_t i = 0; i < 1; i++)
-    ;
-#endif
 #endif
 #else  // !HAS_PORT_SET_CLR
   *swspi.sckPort &= swspi.sckPinMaskClr;
 #endif // end !HAS_PORT_SET_CLR
 #else  // !USE_FAST_PINIO
   digitalWrite(swspi._sck, LOW);
-#if defined(ESP32)
-  for (volatile uint8_t i = 0; i < 1; i++)
-    ;
-#endif // end ESP32
 #endif // end !USE_FAST_PINIO
 }
 
@@ -2426,6 +2449,8 @@ void Adafruit_SPITFT::SPI_WRITE16(uint16_t w) {
     spi_inst_t *pi_spi = hwspi._spi == &SPI ? spi0 : spi1;
     w = __builtin_bswap16(w);
     spi_write_blocking(pi_spi, (uint8_t *)&w, 2);
+#elif defined(ARDUINO_ARCH_RTTHREAD)
+    hwspi._spi->transfer16(w);
 #else
     // MSB, LSB because TFTs are generally big-endian
     hwspi._spi->transfer(w >> 8);
@@ -2482,6 +2507,9 @@ void Adafruit_SPITFT::SPI_WRITE32(uint32_t l) {
     spi_inst_t *pi_spi = hwspi._spi == &SPI ? spi0 : spi1;
     l = __builtin_bswap32(l);
     spi_write_blocking(pi_spi, (uint8_t *)&l, 4);
+#elif defined(ARDUINO_ARCH_RTTHREAD)
+    hwspi._spi->transfer16(l >> 16);
+    hwspi._spi->transfer16(l);
 #else
     hwspi._spi->transfer(l >> 24);
     hwspi._spi->transfer(l >> 16);
@@ -2582,4 +2610,4 @@ inline void Adafruit_SPITFT::TFT_RD_LOW(void) {
 #endif // end !USE_FAST_PINIO
 }
 
-#endif // end __AVR_ATtiny85__
+#endif // end __AVR_ATtiny85__ __AVR_ATtiny84__
