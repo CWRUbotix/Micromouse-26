@@ -17,7 +17,7 @@ typedef enum motor_t {
     RIGHT_MOTOR = 1
 } motor_t;
 
-// #define TEST
+#define TEST
 #undef log
 #undef logf
 #undef logln
@@ -532,6 +532,10 @@ int moveForward(int number) {
 
 /* ---- SETUP ---- */
 void setup(void) {
+  // Start serial
+  Serial.begin(115200);
+  logln("Serial ready!");
+
   // Debug led on the board itself
   pinMode(DEBUG_LED, OUTPUT);
 
@@ -540,11 +544,9 @@ void setup(void) {
   pinMode(GREEN_LED, OUTPUT);
   pinMode(RED_LED, OUTPUT);
 
-  digitalWrite(DEBUG_LED, HIGH);
+  logln("Lights ready!");
 
-  // Start serial
-  Serial.begin(115200);
-  logln("Serial ready!");
+  digitalWrite(DEBUG_LED, HIGH);
 
   // Starts I2C on the default pins (18 (SDA), 19 (SCL))
   // (I think, I can't find docs on it)
@@ -564,6 +566,7 @@ void setup(void) {
   // Set address for each sensor
   // Write the CS line high (turning it on)
   // Set the address
+  // TODO: Check why front center and back right lidars are not initializing
   for (size_t i = 0; i < LIDAR_COUNT; ++i) {
     digitalWrite(lidar_cs_pins[i], HIGH);
     // Pass pointer to the Wire2 object since we're running on I2C bus 2
@@ -572,8 +575,11 @@ void setup(void) {
       logln(i);
     } else {
       lidar_sensors[i].setAddress(LIDAR_ADDR_BASE + i);
+      log("Succeeded init on sensor ");
+      logln(i);
     }
   }
+
   logln("LiDAR sensors ready!");
 
   // Setup motors
@@ -584,6 +590,7 @@ void setup(void) {
 
   setMotor(RIGHT_MOTOR, 0);
   setMotor(LEFT_MOTOR, 0);
+
   logln("Motors ready!");
 
   pinMode(START_BUTTON, INPUT_PULLUP);
@@ -631,6 +638,7 @@ void setup(void) {
   digitalWrite(LED1, LOW);
   digitalWrite(LED2, LOW);
   initialize();
+  readLidar();
 }
 
 void coolLights(){
@@ -656,6 +664,10 @@ void greenLights(){
     digitalWrite(GREEN_LED, LOW);
     delay(50);
 }
+
+void readLidar() {
+}
+
 /* ---- MAIN ---- */
 void loop() {
 // updateSensors();
