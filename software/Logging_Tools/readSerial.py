@@ -6,7 +6,7 @@ arduino = serial.Serial('COM5', 115200)
 time.sleep(2)  # Give time for Arduino to reset
 
 input("Waiting... (Click enter)")
-with open('arduino_data.csv', 'w') as file:
+with open('./Logging_Tools/arduino_data.csv', 'w') as file:
     try:
         while True:
             if arduino.in_waiting > 0:
