@@ -566,7 +566,8 @@ void setup(void) {
   // Set address for each sensor
   // Write the CS line high (turning it on)
   // Set the address
-  // TODO: Check why front center and back right lidars are not initializing
+  // TODO: Check why front center lidar is not initializing
+  // UPDATE: Switching lidar 0 and lidar 1 pins result in both initializing successfully - why?
   for (size_t i = 0; i < LIDAR_COUNT; ++i) {
     digitalWrite(lidar_cs_pins[i], HIGH);
     // Pass pointer to the Wire2 object since we're running on I2C bus 2

@@ -18,18 +18,18 @@
 #define I2C_LIDAR Wire
 
 // LIDAR /CS PINS
-#define LIDAR_CS1 20
-#define LIDAR_CS2 23
-#define LIDAR_CS3 21
-#define LIDAR_CS4 22
+#define LIDAR_CS1 21
+#define LIDAR_CS2 22
+#define LIDAR_CS3 23
+#define LIDAR_CS4 22 // Not updated
 #define LIDAR_CS5 16
 #define LIDAR_CS6 14
 #define LIDAR_CS7 15
 
 // Map the pins to where the sensor is on the robot
 #define LIDAR_FrontShort LIDAR_CS1
-#define LIDAR_FrontLeft LIDAR_CS3
-#define LIDAR_FrontRight LIDAR_CS2
+#define LIDAR_FrontLeft LIDAR_CS2
+#define LIDAR_FrontRight LIDAR_CS3
 #define LIDAR_BackLeft LIDAR_CS7
 #define LIDAR_BackRight LIDAR_CS6
 #define LIDAR_FrontLong LIDAR_CS4
