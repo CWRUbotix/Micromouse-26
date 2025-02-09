@@ -698,11 +698,29 @@ void log_velocities(){
       t++;
     }
   }
+
   setMotor(LEFT_MOTOR, 0);
   setMotor(RIGHT_MOTOR, 0);
 }
 
+void log_distances(){
+  Serial.println("Left Lidar,Right Lidar,Time");
+  for (int voltage = 255; voltage > 15; voltage -=40)
+  {
+    while (t<5000)
+    {
+      Serial.print(lidar_sensors[3].readRange(););
+      Serial.print(",");
+      Serial.print(lidar_sensors[2].readRange());
+      Serial.print(",");
+      Serial.println(t);
+      delay(1);
+      t++;
+    }
+  }
+}
+
 void loop() {
-  log_velocities();
+  log_distances();
   while(true);
 }
