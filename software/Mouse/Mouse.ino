@@ -400,6 +400,9 @@ void turn180(){
   turn(180.0 - getAngle() * 180.0 / PI, LEFT);
 }
 
+
+
+
 // Moves the robot forward 1 square in the direction the robot is currently facing
 int moveForward(int number) {
   // Reset encoders
@@ -657,7 +660,62 @@ void greenLights(){
     delay(50);
 }
 /* ---- MAIN ---- */
+void log_velocities(){
+  float encoderToMeter = wheelRadius/50.00*PI/12.00/gearRatio;
+  Serial.println("Left Encoder,Left Wheel Speed,Right Encoder,Right Wheel Speed,Analog Value,Time");
+  for (int voltage = 255; voltage > 15; voltage -=40)
+  {
+    int t = 1;
+    setMotor(LEFT_MOTOR, 0);
+    setMotor(RIGHT_MOTOR, 0);
+
+    delay(250);
+    leftEncoder.write(0);
+    rightEncoder.write(0);
+    analogWrite(MOTORLEFT_1, 0);
+    analogWrite(MOTORLEFT_2, voltage);
+    analogWrite(MOTORRIGHT_1, 0);
+    analogWrite(MOTORRIGHT_2, voltage);
+    while (t<5000)
+    {
+      Serial.print(leftEncoder.read()*encoderToMeter);
+      Serial.print(",");
+      Serial.print(leftEncoder.read()*encoderToMeter/(t/1000.00));
+      Serial.print(",");
+      Serial.print(rightEncoder.read()*encoderToMeter);
+      Serial.print(",");
+      Serial.print(rightEncoder.read()*encoderToMeter/(t/1000.00));
+      Serial.print(",");
+      Serial.print(voltage);
+      Serial.print(",");
+      Serial.println(t);
+      delay(1);
+      t++;
+    }
+  }
+
+  setMotor(LEFT_MOTOR, 0);
+  setMotor(RIGHT_MOTOR, 0);
+}
+
+void log_distances(){
+  Serial.println("Left Lidar,Right Lidar,Time");
+  for (int voltage = 255; voltage > 15; voltage -=40)
+  {
+    while (t<5000)
+    {
+      Serial.print(lidar_sensors[3].readRange(););
+      Serial.print(",");
+      Serial.print(lidar_sensors[2].readRange());
+      Serial.print(",");
+      Serial.println(t);
+      delay(1);
+      t++;
+    }
+  }
+}
+
 void loop() {
-// updateSensors();
-doRun();
+  log_distances();
+  while(true);
 }
