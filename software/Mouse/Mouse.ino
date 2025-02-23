@@ -664,7 +664,7 @@ void greenLights(){
 /* ---- MAIN ---- */
 float voltage = 1;
 void log_velocities(){
-  float encoderToMeter = wheelRadius/50.00*PI/12.00/gearRatio;
+  float encoderToMeter = wheelRadius/500.00*PI/12.00/gearRatio;
     int t = 1;
 
     //uncomment for right
@@ -729,4 +729,5 @@ void loop() {
     log_velocities();
     voltage += 0.5;
   }
+
 }
