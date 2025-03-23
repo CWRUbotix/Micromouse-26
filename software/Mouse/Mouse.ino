@@ -9,6 +9,7 @@
 #include "micromouse_pins_2023.h"
 // Robot Logic and Algorithm definitions
 #include "Algo/FMicro.cpp"
+#include "PID_v1.h"
 /* ---- Defines ---- */
 typedef enum motor_t {
     LEFT_MOTOR = 0,
@@ -88,6 +89,18 @@ double ultrasonic_distance_factor = 0.17;
 
 bool ultrasonic_errored;
 
+// TurnPID constants
+double setTurnSpeed = 0;
+volatile double currentAngle;
+volatile double targetAngle = 0;
+volatile double angularVoltage = 0;
+IntervalTimer myTimer;
+PID angularPID(&currentAngle, &angularVoltage, &targetAngle, 0.075, 0, 0, DIRECT);
+Encoder *turnEncoder;
+Encoder *otherTurnEncoder;
+
+const int loopTime = 1000; //ms
+
 /**
  * Convert a value in range [-127..127] to a motor power value
  *
@@ -113,7 +126,7 @@ uint8_t convertPower(int8_t p) {
  *              Positive is "forward"
  *              Negative is "backward"
  */
-void setMotor (motor_t m, int power) {
+void setMotor(motor_t m, int power) {
   if (power < -127) {
     power = -127;
   }else if (power > 127) {
@@ -166,7 +179,7 @@ int wallFront(){
   return !(ultrasonic > SENSOR_RANGE_MAX);
 }
 
-void updateSensors () {
+void updateSensors() {
   // Read the right LIDAR sensors and update their values
   back_right = lidar_sensors[1].readRange();
   back_right_errored = lidar_sensors[1].readRangeStatus() != VL6180X_ERROR_NONE || back_right > SENSOR_RANGE_MAX;
@@ -256,7 +269,7 @@ void turn(double angle, turning_direction_t direction) {
     turnEncoder = &rightEncoder;
     otherTurnEncoder = &leftEncoder;
   } else {
-    // Turn righ
+    // Turn right
     turnEncoder = &leftEncoder;
     otherTurnEncoder = &rightEncoder;
     dir = -1;
@@ -281,6 +294,35 @@ void turn(double angle, turning_direction_t direction) {
   // Stop both motors
   setMotor(RIGHT_MOTOR, 0);
   setMotor(LEFT_MOTOR, 0);
+}
+
+void setupTurnPID() {
+  // Setup Angular PID
+  angularPID.SetOutputLimits(-45.125, 45.125);
+  angularPID.SetMode(AUTOMATIC);
+}
+
+/**
+ * Calculate the next speed to set the 
+ * 
+ * @param setSpeed  The current target speed in deg/s
+ */
+void calculateTurn() {
+  // Get targetAngle
+  targetAngle += setTurnSpeed * loopTime;
+
+  // Get currentAngle
+  double encoderDifference = turnEncoder->read() - otherTurnEncoder->read();
+  currentAngle = encoderDifference / turnRatio; // In degrees
+
+  // Update angularVoltage
+  angularPID.Compute();
+
+  // Set motors
+  // setMotor(RIGHT_MOTOR, angularVoltage);
+  // setMotor(LEFT_MOTOR, -angularVoltage);
+
+  // return angularVoltage;
 }
 
 /**
@@ -494,7 +536,7 @@ int moveForward(int number) {
     if (front_left_errored && front_right_errored) {
         // logf("both errored, setting offset to 0\n");
         centerOffset = 0;
-    }else if (front_left_errored) {
+    } else if (front_left_errored) {
         // If we don't have a left value
         // (We're targeting to an offset of 0)
         // sensors are 84 mm apart, maze is 240mm wide
@@ -589,6 +631,7 @@ void setup(void) {
 
   setMotor(RIGHT_MOTOR, 0);
   setMotor(LEFT_MOTOR, 0);
+
   logln("Motors ready!");
 
   pinMode(START_BUTTON, INPUT);
@@ -632,6 +675,15 @@ void setup(void) {
   }else {
   }
   delay(500);
+
+  turnEncoder = &rightEncoder;
+  otherTurnEncoder = &leftEncoder;
+  turnEncoder->write(0);
+  otherTurnEncoder->write(0);
+  setupTurnPID();
+  myTimer.begin(calculateTurn, loopTime*1000);
+  logln("PID ready!");
+
   digitalWrite(LED0, LOW);
   digitalWrite(LED1, LOW);
   digitalWrite(LED2, LOW);
