@@ -669,6 +669,19 @@ void greenLights(){
 void readLidar() {
 }
 
+
+float maxVoltage = 7.4;
+float getOperatingVoltage()
+{
+  return analogRead(23)/1023*3;
+}
+int getMotorAdjustment(int analogValue)
+{
+  float value = (maxVoltage/getOperatingVoltage())*analogValue;
+  if (value >= 255)
+    return 255;
+  return (int)(value);
+}
 /* ---- MAIN ---- */
 void loop() {
   updateSensors();
