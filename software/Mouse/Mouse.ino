@@ -661,7 +661,7 @@ void greenLights(){
 }
 /* ---- MAIN ---- */
 void log_velocities(){
-  float encoderToMeter = wheelRadius/50.00*PI/12.00/gearRatio;
+  float encoderToMMeter = 100*wheelRadius*2*PI/(encoderTicks * gearRatio);
   Serial.println("Left Encoder,Left Wheel Speed,Right Encoder,Right Wheel Speed,Analog Value,Time");
   for (int voltage = 255; voltage > 15; voltage -=40)
   {
@@ -678,13 +678,13 @@ void log_velocities(){
     analogWrite(MOTORRIGHT_2, voltage);
     while (t<5000)
     {
-      Serial.print(leftEncoder.read()*encoderToMeter);
+      Serial.print(leftEncoder.read()*encoderToMMeter);
       Serial.print(",");
-      Serial.print(leftEncoder.read()*encoderToMeter/(t/1000.00));
+      Serial.print(leftEncoder.read()*encoderToMMeter/(t/1000.00));
       Serial.print(",");
-      Serial.print(rightEncoder.read()*encoderToMeter);
+      Serial.print(rightEncoder.read()*encoderToMMeter);
       Serial.print(",");
-      Serial.print(rightEncoder.read()*encoderToMeter/(t/1000.00));
+      Serial.print(rightEncoder.read()*encoderToMMeter/(t/1000.00));
       Serial.print(",");
       Serial.print(voltage);
       Serial.print(",");
