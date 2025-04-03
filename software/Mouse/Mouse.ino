@@ -93,13 +93,13 @@ bool ultrasonic_errored;
 double setTurnSpeed = 0;
 volatile double currentAngle;
 volatile double targetAngle = 0;
-volatile double angularVoltage = 0;
+volatile double targetTurnSpeed = 0;
 IntervalTimer myTimer;
-PID angularPID(&currentAngle, &angularVoltage, &targetAngle, 0.075, 0, 0, DIRECT);
+PID angularPID(&currentAngle, &targetTurnSpeed, &targetAngle, 1.7, 0, 0.07, DIRECT);
 Encoder *turnEncoder;
 Encoder *otherTurnEncoder;
 
-const int loopTime = 1000; //ms
+const int loopTime = 100; //ms
 
 /**
  * Convert a value in range [-127..127] to a motor power value
@@ -296,6 +296,7 @@ void turn(double angle, turning_direction_t direction) {
   setMotor(LEFT_MOTOR, 0);
 }
 
+
 void setupTurnPID() {
   // Setup Angular PID
   angularPID.SetOutputLimits(-45.125, 45.125);
@@ -303,24 +304,28 @@ void setupTurnPID() {
 }
 
 /**
- * Calculate the next speed to set the 
+ * Calculate the next speed to set the motors to
  * 
  * @param setSpeed  The current target speed in deg/s
  */
 void calculateTurn() {
   // Get targetAngle
-  targetAngle += setTurnSpeed * loopTime;
+  targetAngle += setTurnSpeed * loopTime/1000;
 
   // Get currentAngle
   double encoderDifference = turnEncoder->read() - otherTurnEncoder->read();
-  currentAngle = encoderDifference / turnRatio; // In degrees
+  currentAngle = encoderDifference / turnRatio / 2; // In degrees
 
   // Update angularVoltage
   angularPID.Compute();
 
   // Set motors
-  // setMotor(RIGHT_MOTOR, angularVoltage);
-  // setMotor(LEFT_MOTOR, -angularVoltage);
+  setMotor(RIGHT_MOTOR, targetTurnSpeed);
+  setMotor(LEFT_MOTOR, -targetTurnSpeed);
+
+  logln("");
+  logln(targetTurnSpeed);
+  logln(targetAngle-currentAngle);
 
   // return angularVoltage;
 }
