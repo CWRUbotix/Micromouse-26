@@ -13,8 +13,8 @@
 #include "Algo/FMicro.cpp"
 /* ---- Defines ---- */
 typedef enum motor_t {
-    LEFT_MOTOR = 0,
-    RIGHT_MOTOR = 1
+  LEFT_MOTOR = 0,
+  RIGHT_MOTOR = 1
 } motor_t;
 
 #define TEST
@@ -34,16 +34,18 @@ typedef enum motor_t {
   #define LOGGING 0
 #endif
 
-#define POWER_DEADBAND 12
+#define POWER_DEADBAND 0
 
 #define LIDAR_COUNT 5
-#define LONG_RANGE_LIDAR_COUNT 1
 #define LIDAR_ADDR_BASE 0x50
 
 // The physical distance between the sensors
 // TODO: Chech that values are consistent with new robot
-#define LIDAR_SEPARATION_FB 74.5 // 74.5 mm between sensors front to back
-#define LIDAR_SEPARATION_LR 70 // 70 mm between sensors across robot
+#define LIDAR_SEPARATION_FB 39.9  // 39.9 mm between sensors front to back for Right Side
+// #define LIDAR_SEPARATION_FB_L 40.6 // 40.6 mm between sensors front to back for Left Side the one above is right side
+#define LIDAR_SEPARATION_LR 47  // 47 mm between sensors across robot
+// boardwidth = 41.5
+
 
 int ANGLE_TOLERANCE = 0;
 int speed = 32;
@@ -71,18 +73,16 @@ const double turnRatio = (wheelSeparation / 2.0) / wheelRadius / 360 * gearRatio
 
 // GPIO pin numbers for the CS line on each LiDAR sensor
 // TODO: Check inputs are correct
-const int lidar_cs_pins[LIDAR_COUNT + LONG_RANGE_LIDAR_COUNT] = {LIDAR_FrontLeft, LIDAR_FrontRight, LIDAR_BackLeft, LIDAR_BackRight, LIDAR_FrontShort, LIDAR_FrontLong};
+const int lidar_cs_pins[LIDAR_COUNT] = {LIDAR_FrontLeft, LIDAR_FrontRight, LIDAR_BackLeft, LIDAR_BackRight, LIDAR_FrontShort};
 
 Adafruit_VL6180X lidar_sensors[LIDAR_COUNT];
-Adafruit_VL53L0X long_range_lidar_sensors[LONG_RANGE_LIDAR_COUNT];
 
-bool front_left_errored, front_right_errored, back_left_errored, back_right_errored, forward_errored, long_range_errored;
+bool front_left_errored, front_right_errored, back_left_errored, back_right_errored, forward_errored;
 uint8_t forward;
 uint8_t front_left;
 uint8_t front_right;
 uint8_t back_left;
 uint8_t back_right;
-uint8_t long_range;
 
 Encoder rightEncoder (ENCODER_RIGHT_1, ENCODER_RIGHT_2);
 Encoder leftEncoder (ENCODER_LEFT_1, ENCODER_LEFT_2);
@@ -161,15 +161,6 @@ int wallFront() {
   return !(lidar_sensors[4].readRangeStatus() != VL6180X_ERROR_NONE || forward > SENSOR_RANGE_MAX);
 }
 
-// TODO: Update to check number of squares using SQUARE_SIZE
-// TODO: Update for specific lidar technology
-int numSquares() {
-  long_range = lidar_sensors[5].readRange();
-  if(!(lidar_sensors[5].readRangeStatus() != VL53L0X_ERROR_NONE || long_range > LONG_RANGE_SENSOR_RANGE_MAX));
-    return long_range / SQUARE_SIZE;
-  return 0;
-}
-
 void updateSensors () {
   // Read the right LIDAR sensors and update their values
   back_right = lidar_sensors[1].readRange();
@@ -186,10 +177,6 @@ void updateSensors () {
   // Read the front short LIDAR sensor and update its value
   forward = lidar_sensors[4].readRange();
   forward_errored = lidar_sensors[4].readRangeStatus() != VL6180X_ERROR_NONE || forward > SENSOR_RANGE_MAX;
-
-  // Read the long range LIDAR sensor and update its value
-  long_range = lidar_sensors[5].readRange();
-  long_range_errored = long_range_lidar_sensors[0].readRangeStatus() != VL53L0X_ERROR_NONE || long_range > LONG_RANGE_SENSOR_RANGE_MAX;
 }
 
 // p_controller(80.0, currentAngle, 0, -127.0, 127.0);
@@ -442,20 +429,20 @@ int moveForward(int number) {
 
     // We're also not allowed to break out of the loop (stop going forward), if we're farther than 95 mm from a wall
     // If we think we're there, but we're not, go farther
-    if (currentDistance >= goalDistance && long_range < 150 && long_range > 95) {
+    if (currentDistance >= goalDistance && forward < 150 && forward > 95) {
       logf("Moving goalDistance forward.\n");
-      // Increase goal distance such that the long_range ends up (60mm) away from the wall in front of us
-      goalDistance += long_range - LIDAR_FRONT_TARGET;
+      // Increase goal distance such that the forward ends up (60mm) away from the wall in front of us
+      goalDistance += forward - LIDAR_FRONT_TARGET;
       redLights();
     }
 
     // check if currentDistance and currentAngle are within tolerance
     // For the lidar, 60 is 60 mm from the wall. This is about
     // the distance when the robot is centered in the tile
-    if (currentDistance >= goalDistance || (!long_range_errored && long_range < LIDAR_FRONT_TARGET)) {
+    if (currentDistance >= goalDistance || (!forward_errored && forward < LIDAR_FRONT_TARGET)) {
       setMotor(LEFT_MOTOR, 0);
       setMotor(RIGHT_MOTOR, 0);
-      logf("Stopped. Long Range Lidar: %d, %d, %lf\n", !long_range_errored, long_range < LIDAR_FRONT_TARGET, long_range);
+      logf("Stopped. Long Range Lidar: %d, %d, %lf\n", !forward_errored, forward < LIDAR_FRONT_TARGET, forward);
       if(digitalRead(RED_LED) == HIGH)
         digitalWrite(RED_LED, LOW);
       greenLights();
@@ -556,11 +543,11 @@ void setup() {
 
   // Setup LiDARs
   // short range lidars
-  for (size_t i = 1; i < LIDAR_COUNT + LONG_RANGE_LIDAR_COUNT; i++) {
+  for (size_t i = 1; i < LIDAR_COUNT; i++) {
     pinMode(lidar_cs_pins[i], OUTPUT);
   }
   // Disable all sensors except the first
-  for (size_t i = 2; i < LIDAR_COUNT + LONG_RANGE_LIDAR_COUNT; i++) {
+  for (size_t i = 1; i < LIDAR_COUNT; i++) {
     digitalWrite(lidar_cs_pins[i], LOW);
   }
 
@@ -671,6 +658,6 @@ void readLidar() {
 
 /* ---- MAIN ---- */
 void loop() {
-  updateSensors();
-  doRun();
+  // updateSensors();
+  // doRun();
 }
