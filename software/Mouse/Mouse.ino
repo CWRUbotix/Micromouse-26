@@ -125,8 +125,8 @@ void setMotor (motor_t m, int power) {
     m1 = MOTORLEFT_1;
     m2 = MOTORLEFT_2;
   }else if (m == RIGHT_MOTOR) {
-    m1 = MOTORRIGHT_1;
-    m2 = MOTORRIGHT_2;
+    m1 = MOTORRIGHT_2;
+    m2 = MOTORRIGHT_1;
   }else {
     return;
   }
@@ -135,11 +135,11 @@ void setMotor (motor_t m, int power) {
       analogWrite(m1, 255);
       analogWrite(m2, 255);
   } else if (power > 0) {
-      analogWrite(m1, convertPower(power));
-      analogWrite(m2, 255);
-  } else {
       analogWrite(m1, 255);
       analogWrite(m2, convertPower(power));
+  } else {
+      analogWrite(m1, convertPower(power));
+      analogWrite(m2, 255);
   }
 }
 
@@ -625,8 +625,6 @@ void setup() {
   digitalWrite(LED1, LOW);
   digitalWrite(LED2, LOW);
   initialize();
-  // readLidar();
-  moveForward(1);
 }
 
 void coolLights(){
@@ -660,4 +658,5 @@ void readLidar() {
 void loop() {
   // updateSensors();
   // doRun();
+  greenLights();
 }
