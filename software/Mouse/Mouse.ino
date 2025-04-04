@@ -543,11 +543,11 @@ void setup() {
 
   // Setup LiDARs
   // short range lidars
-  for (size_t i = 1; i < LIDAR_COUNT; i++) {
+  for (size_t i = 0; i < LIDAR_COUNT; i++) {
     pinMode(lidar_cs_pins[i], OUTPUT);
   }
   // Disable all sensors except the first
-  for (size_t i = 1; i < LIDAR_COUNT; i++) {
+  for (size_t i = 0; i < LIDAR_COUNT; i++) {
     digitalWrite(lidar_cs_pins[i], LOW);
   }
 
@@ -580,7 +580,7 @@ void setup() {
 
   logln("Motors ready!");
 
-  pinMode(START_BUTTON, INPUT_PULLUP);
+  pinMode(START_BUTTON, INPUT);
   int t = 0;
   // Spin until start button is pressed
   // t is ms
