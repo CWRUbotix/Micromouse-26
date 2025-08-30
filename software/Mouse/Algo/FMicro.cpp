@@ -18,9 +18,9 @@
   #define LOGGING 0
 #endif
 
-#define MAZE_SIZE 10
-#define MAZE_HEIGHT 10
-#define MAZE_WIDTH 10
+#define MAZE_SIZE 6
+#define MAZE_HEIGHT MAZE_SIZE
+#define MAZE_WIDTH MAZE_SIZE
 
 // Represents cardinal direction with respect to the maze
 enum cardinal_t {NORTH, EAST, SOUTH, WEST};

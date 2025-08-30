@@ -3,8 +3,10 @@
 #include <Wire.h>
 // Arduino standard encoder library
 #include <Encoder.h>
-// Adafruit library for VL6180X LiDAR sensor
+// Adafruit library for VL6180X (short range) and VL53L0X (long ) LiDAR sensor
 #include "Adafruit_VL6180X.h"
+#include "Adafruit_VL53L0X.h"
+// Adafruit library for VL53L0X (long range)
 // Pin definitions
 #include "micromouse_pins_2023.h"
 // Robot Logic and Algorithm definitions
@@ -15,7 +17,7 @@ typedef enum motor_t {
     RIGHT_MOTOR = 1
 } motor_t;
 
-// #define TEST
+#define TEST
 #undef log
 #undef logf
 #undef logln
@@ -34,19 +36,22 @@ typedef enum motor_t {
 
 #define POWER_DEADBAND 12
 
-#define LIDAR_COUNT 4
+#define LIDAR_COUNT 5
+#define LONG_RANGE_LIDAR_COUNT 1
 #define LIDAR_ADDR_BASE 0x50
 
 // The physical distance between the sensors
-#define LIDAR_SEPERATION 123 // 123 mm between sensors
+// TODO: Chech that values are consistent with new robot
+#define LIDAR_SEPARATION_FB 74.5 // 74.5 mm between sensors front to back
+#define LIDAR_SEPARATION_LR 70 // 70 mm between sensors across robot
 
 int ANGLE_TOLERANCE = 0;
 int speed = 32;
 
 const double encoderTicks = 12;
-const double gearRatio = 150;
-const double wheelSeparation = 95; // 95 mm between wheels
-const double wheelRadius = 30; // 30 mm radius
+const double gearRatio = 75;
+const double wheelSeparation = 7.5; // 7.5 cm between wheels
+const double wheelRadius = 1.72; // 3.44 cm diameter
 const double turnRatio = (wheelSeparation / 2.0) / wheelRadius / 360 * gearRatio * encoderTicks; // degree to encoder tick conversion ratio
 
 // The LiDAR sensors return a running average of readings,
@@ -54,9 +59,10 @@ const double turnRatio = (wheelSeparation / 2.0) / wheelRadius / 360 * gearRatio
 // (After a certain amount of time, the running average overflows the maximum and only then does the LiDAR throw a read error)
 // If the LiDAR is greater than this value, we assume that it's not sensing the wall.
 #define SENSOR_RANGE_MAX 110
+#define LONG_RANGE_SENSOR_RANGE_MAX 110 // TODO: Check whether this is accurate
 
-// When centered, there should be 60mm in front of the ultrasonic - changed to 90 for more leeway and turn space
-#define ULTRASONIC_FRONT 90
+// When centered, there should be ~60mm in front of the front sensor
+#define LIDAR_FRONT_TARGET 60
 
 // Squares are 10in by 10in, but we work in mm. 10in = 254 mm
 #define SQUARE_SIZE 254
@@ -64,29 +70,22 @@ const double turnRatio = (wheelSeparation / 2.0) / wheelRadius / 360 * gearRatio
 /* ---- User Variables ---- */
 
 // GPIO pin numbers for the CS line on each LiDAR sensor
-// We have another 2 pins on the board, but nothing's plugged into them
-const int lidar_cs_pins[LIDAR_COUNT] = {LIDAR_CS1, LIDAR_CS2, LIDAR_CS3, LIDAR_CS4};
+// TODO: Check inputs are correct
+const int lidar_cs_pins[LIDAR_COUNT + LONG_RANGE_LIDAR_COUNT] = {LIDAR_FrontLeft, LIDAR_FrontRight, LIDAR_BackLeft, LIDAR_BackRight, LIDAR_FrontShort, LIDAR_FrontLong};
 
 Adafruit_VL6180X lidar_sensors[LIDAR_COUNT];
+Adafruit_VL53L0X long_range_lidar_sensors[LONG_RANGE_LIDAR_COUNT];
 
-bool back_right_errored, front_right_errored, back_left_errored, front_left_errored;
-uint8_t back_right;
+bool front_left_errored, front_right_errored, back_left_errored, back_right_errored, forward_errored, long_range_errored;
+uint8_t forward;
+uint8_t front_left;
 uint8_t front_right;
 uint8_t back_left;
-uint8_t front_left;
+uint8_t back_right;
+uint8_t long_range;
 
 Encoder rightEncoder (ENCODER_RIGHT_1, ENCODER_RIGHT_2);
 Encoder leftEncoder (ENCODER_LEFT_1, ENCODER_LEFT_2);
-
-double ultrasonic;
-double ultrasonic_running_average;
-const double ultrasonic_ave_factor = 0.1;
-
-// Magic constant that converts the time the ultrasonic takes to read the sensors into millimeters
-// Based on the speed of sound
-double ultrasonic_distance_factor = 0.17;
-
-bool ultrasonic_errored;
 
 /**
  * Convert a value in range [-127..127] to a motor power value
@@ -145,52 +144,52 @@ void setMotor (motor_t m, int power) {
 }
 
 int wallLeft() {
-  front_left = lidar_sensors[3].readRange();
-  logf("Left: %d\n", !(lidar_sensors[3].readRangeStatus() != VL6180X_ERROR_NONE || front_left > SENSOR_RANGE_MAX));
-  return !(lidar_sensors[3].readRangeStatus() != VL6180X_ERROR_NONE || front_left > SENSOR_RANGE_MAX);
+  front_left = lidar_sensors[0].readRange();
+  logf("Left: %d\n", !(lidar_sensors[0].readRangeStatus() != VL6180X_ERROR_NONE || front_left > SENSOR_RANGE_MAX));
+  return !(lidar_sensors[0].readRangeStatus() != VL6180X_ERROR_NONE || front_left > SENSOR_RANGE_MAX);
 }
 
 int wallRight() {
-  front_right = lidar_sensors[2].readRange();
-  logf("Right: %d\n", !(lidar_sensors[2].readRangeStatus() != VL6180X_ERROR_NONE || front_right > SENSOR_RANGE_MAX));
-  return !(lidar_sensors[2].readRangeStatus() != VL6180X_ERROR_NONE || front_right > SENSOR_RANGE_MAX);
+  front_right = lidar_sensors[1].readRange();
+  logf("Right: %d\n", !(lidar_sensors[1].readRangeStatus() != VL6180X_ERROR_NONE || front_right > SENSOR_RANGE_MAX));
+  return !(lidar_sensors[1].readRangeStatus() != VL6180X_ERROR_NONE || front_right > SENSOR_RANGE_MAX);
 }
 
-int wallFront(){
-  digitalWrite(SONIC_TRIG1, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(SONIC_TRIG1, LOW);
-  ultrasonic = pulseIn(SONIC_ECHO1, HIGH) * ultrasonic_distance_factor;
-  ultrasonic_errored = ultrasonic > SENSOR_RANGE_MAX;
-  logf("Front: %d\n", !(ultrasonic > SENSOR_RANGE_MAX));
-  return !(ultrasonic > SENSOR_RANGE_MAX);
+int wallFront() {
+  forward = lidar_sensors[4].readRange();
+  logf("Front: %d\n", !(lidar_sensors[4].readRangeStatus() != VL6180X_ERROR_NONE || forward > SENSOR_RANGE_MAX));
+  return !(lidar_sensors[4].readRangeStatus() != VL6180X_ERROR_NONE || forward > SENSOR_RANGE_MAX);
+}
+
+// TODO: Update to check number of squares using SQUARE_SIZE
+// TODO: Update for specific lidar technology
+int numSquares() {
+  long_range = lidar_sensors[5].readRange();
+  if(!(lidar_sensors[5].readRangeStatus() != VL53L0X_ERROR_NONE || long_range > LONG_RANGE_SENSOR_RANGE_MAX));
+    return long_range / SQUARE_SIZE;
+  return 0;
 }
 
 void updateSensors () {
   // Read the right LIDAR sensors and update their values
   back_right = lidar_sensors[1].readRange();
   back_right_errored = lidar_sensors[1].readRangeStatus() != VL6180X_ERROR_NONE || back_right > SENSOR_RANGE_MAX;
-  front_right = lidar_sensors[2].readRange();
-  front_right_errored = lidar_sensors[2].readRangeStatus() != VL6180X_ERROR_NONE || front_right > SENSOR_RANGE_MAX;
+  front_right = lidar_sensors[3].readRange();
+  front_right_errored = lidar_sensors[3].readRangeStatus() != VL6180X_ERROR_NONE || front_right > SENSOR_RANGE_MAX;
 
   // Read the left LIDAR sensors and update their values
   back_left = lidar_sensors[0].readRange();
   back_left_errored = lidar_sensors[0].readRangeStatus() != VL6180X_ERROR_NONE || back_left > SENSOR_RANGE_MAX;
-  front_left = lidar_sensors[3].readRange();
-  front_left_errored = lidar_sensors[3].readRangeStatus() != VL6180X_ERROR_NONE || front_left > SENSOR_RANGE_MAX;
+  front_left = lidar_sensors[2].readRange();
+  front_left_errored = lidar_sensors[2].readRangeStatus() != VL6180X_ERROR_NONE || front_left > SENSOR_RANGE_MAX;
 
-  // Read front ultrasonic sensor
-  digitalWrite(SONIC_TRIG1, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(SONIC_TRIG1, LOW);
-  ultrasonic = pulseIn(SONIC_ECHO1, HIGH) * ultrasonic_distance_factor;
-  ultrasonic_errored = ultrasonic > SENSOR_RANGE_MAX;
-  // And keep a running average
-  if (!ultrasonic_errored) {
-    ultrasonic_running_average = ultrasonic * ultrasonic_ave_factor + ultrasonic_running_average * (1 - ultrasonic_ave_factor);
-  }
+  // Read the front short LIDAR sensor and update its value
+  forward = lidar_sensors[4].readRange();
+  forward_errored = lidar_sensors[4].readRangeStatus() != VL6180X_ERROR_NONE || forward > SENSOR_RANGE_MAX;
 
-  // logf("Ultrasonic: %f (avg: %f); back_left (%d): %d, front_right (%d): %d, back_left (%d): %d, front_left (%d): %d\n", ultrasonic, ultrasonic_running_average, back_right_errored, back_right, front_right_errored, front_right, back_left_errored, back_left, front_left_errored, front_left);
+  // Read the long range LIDAR sensor and update its value
+  long_range = lidar_sensors[5].readRange();
+  long_range_errored = long_range_lidar_sensors[0].readRangeStatus() != VL53L0X_ERROR_NONE || long_range > LONG_RANGE_SENSOR_RANGE_MAX;
 }
 
 // p_controller(80.0, currentAngle, 0, -127.0, 127.0);
@@ -213,8 +212,8 @@ double getAngle()
 {
   // arctan((lidarDistanceBL - lidarDistanceFL) / lidarSeparation);
   // Average left and right sensors
-  double leftAngle = -atan2(front_left - back_left, LIDAR_SEPERATION);
-  double rightAngle = atan2(front_right - back_right, LIDAR_SEPERATION);
+  double leftAngle = -atan2(front_left - back_left, LIDAR_SEPARATION_FB);
+  double rightAngle = atan2(front_right - back_right, LIDAR_SEPARATION_FB);
   // logf("left angle: %f\tright angle: %f; ", leftAngle * 180.0 / PI, rightAngle * 180.0 / PI);
 
   if ((back_left_errored || front_left_errored) && (back_right_errored || front_right_errored)) {
@@ -443,20 +442,20 @@ int moveForward(int number) {
 
     // We're also not allowed to break out of the loop (stop going forward), if we're farther than 95 mm from a wall
     // If we think we're there, but we're not, go farther
-    if (currentDistance >= goalDistance && ultrasonic < 150 && ultrasonic > 95) {
+    if (currentDistance >= goalDistance && long_range < 150 && long_range > 95) {
       logf("Moving goalDistance forward.\n");
-      // Increase goal distance such that the ultrasonic ends up ULTRASONIC_FRONT (60mm) away from the wall in front of us
-      goalDistance += ultrasonic - ULTRASONIC_FRONT;
+      // Increase goal distance such that the long_range ends up (60mm) away from the wall in front of us
+      goalDistance += long_range - LIDAR_FRONT_TARGET;
       redLights();
     }
 
     // check if currentDistance and currentAngle are within tolerance
-    // For the ultrasonic, 60 is 60 mm from the wall. This is about
+    // For the lidar, 60 is 60 mm from the wall. This is about
     // the distance when the robot is centered in the tile
-    if (currentDistance >= goalDistance || (!ultrasonic_errored && ultrasonic < ULTRASONIC_FRONT)) {
+    if (currentDistance >= goalDistance || (!long_range_errored && long_range < LIDAR_FRONT_TARGET)) {
       setMotor(LEFT_MOTOR, 0);
       setMotor(RIGHT_MOTOR, 0);
-      logf("Stopped. Ultrasonic: %d, %d, %lf\n", !ultrasonic_errored, ultrasonic < ULTRASONIC_FRONT, ultrasonic);
+      logf("Stopped. Long Range Lidar: %d, %d, %lf\n", !long_range_errored, long_range < LIDAR_FRONT_TARGET, long_range);
       if(digitalRead(RED_LED) == HIGH)
         digitalWrite(RED_LED, LOW);
       greenLights();
@@ -498,9 +497,9 @@ int moveForward(int number) {
         // If we don't have a left value
         // (We're targeting to an offset of 0)
         // sensors are 84 mm apart, maze is 240mm wide
-        centerOffset = (double)front_right - (240 - 84) / 2.0;
+        centerOffset = (double)front_right - (240 - LIDAR_SEPARATION_LR) / 2.0;
     }else if (front_right_errored) {
-        centerOffset = (240 - 84) / 2.0 - (double)front_left;
+        centerOffset = (240 - LIDAR_SEPARATION_LR) / 2.0 - (double)front_left;
     }
 
     // logf("left %d; right %d: center offset: %f\n", front_left, front_right, centerOffset);
@@ -533,7 +532,11 @@ int moveForward(int number) {
 }
 
 /* ---- SETUP ---- */
-void setup(void) {
+void setup() {
+  // Start serial
+  Serial.begin(115200);
+  logln("Serial ready!");
+
   // Debug led on the board itself
   pinMode(DEBUG_LED, OUTPUT);
 
@@ -542,11 +545,9 @@ void setup(void) {
   pinMode(GREEN_LED, OUTPUT);
   pinMode(RED_LED, OUTPUT);
 
-  digitalWrite(DEBUG_LED, HIGH);
+  logln("Lights ready!");
 
-  // Start serial
-  Serial.begin(115200);
-  logln("Serial ready!");
+  digitalWrite(DEBUG_LED, HIGH);
 
   // Starts I2C on the default pins (18 (SDA), 19 (SCL))
   // (I think, I can't find docs on it)
@@ -554,11 +555,12 @@ void setup(void) {
   logln("I2C ready!");
 
   // Setup LiDARs
-  for (size_t i = 0; i < LIDAR_COUNT; ++i) {
+  // short range lidars
+  for (size_t i = 1; i < LIDAR_COUNT + LONG_RANGE_LIDAR_COUNT; i++) {
     pinMode(lidar_cs_pins[i], OUTPUT);
   }
   // Disable all sensors except the first
-  for (size_t i = 1; i < LIDAR_COUNT; ++i) {
+  for (size_t i = 2; i < LIDAR_COUNT + LONG_RANGE_LIDAR_COUNT; i++) {
     digitalWrite(lidar_cs_pins[i], LOW);
   }
 
@@ -573,13 +575,12 @@ void setup(void) {
       logln(i);
     } else {
       lidar_sensors[i].setAddress(LIDAR_ADDR_BASE + i);
+      log("Succeeded init on sensor ");
+      logln(i);
     }
   }
-  logln("LiDAR sensors ready!");
 
-  pinMode(SONIC_TRIG1, OUTPUT);
-  pinMode(SONIC_ECHO1, INPUT);
-  logln("Ultrasonic sensor ready!");
+  logln("LiDAR sensors ready!");
 
   // Setup motors
   pinMode(MOTORLEFT_1, OUTPUT);
@@ -589,9 +590,10 @@ void setup(void) {
 
   setMotor(RIGHT_MOTOR, 0);
   setMotor(LEFT_MOTOR, 0);
+
   logln("Motors ready!");
 
-  pinMode(START_BUTTON, INPUT);
+  pinMode(START_BUTTON, INPUT_PULLUP);
   int t = 0;
   // Spin until start button is pressed
   // t is ms
@@ -636,6 +638,8 @@ void setup(void) {
   digitalWrite(LED1, LOW);
   digitalWrite(LED2, LOW);
   initialize();
+  // readLidar();
+  moveForward(1);
 }
 
 void coolLights(){
@@ -661,8 +665,25 @@ void greenLights(){
     digitalWrite(GREEN_LED, LOW);
     delay(50);
 }
+
+void readLidar() {
+}
+
+
+float maxVoltage = 7.4;
+float getOperatingVoltage()
+{
+  return analogRead(23)/1023*3;
+}
+int getMotorAdjustment(int analogValue)
+{
+  float value = (maxVoltage/getOperatingVoltage())*analogValue;
+  if (value >= 255)
+    return 255;
+  return (int)(value);
+}
 /* ---- MAIN ---- */
 void loop() {
-// updateSensors();
-doRun();
+  updateSensors();
+  doRun();
 }
