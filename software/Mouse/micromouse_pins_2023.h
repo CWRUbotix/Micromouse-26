@@ -26,10 +26,10 @@
 
 // Map the pins to where the sensor is on the robot
 #define LIDAR_FrontShort P7 // LIDAR_CS1
-#define LIDAR_BackRight P6
-#define LIDAR_FrontRight P5
-#define LIDAR_FrontLeft P4 // LIDAR_CS2
-#define LIDAR_BackLeft P3
+#define LIDAR_BackRight P5
+#define LIDAR_FrontRight P6
+#define LIDAR_FrontLeft P3 // LIDAR_CS2
+#define LIDAR_BackLeft P4
 
 // Encoders
 #define ENCODER_RIGHT_1 4

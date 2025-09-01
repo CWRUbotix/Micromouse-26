@@ -41,30 +41,30 @@ typedef enum motor_t {
 
 // The physical distance between the sensors
 // TODO: Chech that values are consistent with new robot
-#define LIDAR_SEPARATION_FB 39.9  // 39.9 mm between sensors front to back for Right Side
+#define LIDAR_SEPARATION_FB 40.8  // 39.9 mm between sensors front to back for Right Side
 // #define LIDAR_SEPARATION_FB_L 40.6 // 40.6 mm between sensors front to back for Left Side the one above is right side
-#define LIDAR_SEPARATION_LR 47  // 47 mm between sensors across robot
+#define LIDAR_SEPARATION_LR 45.5  // 47 mm between sensors across robot
 // boardwidth = 41.5
 
 
-int ANGLE_TOLERANCE = 0;
-int speed = 32;
+int ANGLE_TOLERANCE = 20;
+int speed = 20;
 
 const double encoderTicks = 12;
 const double gearRatio = 75;
-const double wheelSeparation = 7.5; // 7.5 cm between wheels
-const double wheelRadius = 1.72; // 3.44 cm diameter
+const double wheelSeparation = 75; // 7.5 cm between wheels
+const double wheelRadius = 17.2; // 3.44 cm diameter
 const double turnRatio = (wheelSeparation / 2.0) / wheelRadius / 360 * gearRatio * encoderTicks; // degree to encoder tick conversion ratio
 
 // The LiDAR sensors return a running average of readings,
 //  so when we move past a wall, the LiDAR returns a value greater than the previous value but less than an overflow.
 // (After a certain amount of time, the running average overflows the maximum and only then does the LiDAR throw a read error)
 // If the LiDAR is greater than this value, we assume that it's not sensing the wall.
-#define SENSOR_RANGE_MAX 110
+#define SENSOR_RANGE_MAX 150
 #define LONG_RANGE_SENSOR_RANGE_MAX 110 // TODO: Check whether this is accurate
 
 // When centered, there should be ~60mm in front of the front sensor
-#define LIDAR_FRONT_TARGET 60
+#define LIDAR_FRONT_TARGET 90
 
 // Squares are 10in by 10in, but we work in mm. 10in = 254 mm
 #define SQUARE_SIZE 254
@@ -84,7 +84,7 @@ uint8_t front_right;
 uint8_t back_left;
 uint8_t back_right;
 
-Encoder rightEncoder (ENCODER_RIGHT_1, ENCODER_RIGHT_2);
+Encoder rightEncoder (ENCODER_RIGHT_2, ENCODER_RIGHT_1);
 Encoder leftEncoder (ENCODER_LEFT_1, ENCODER_LEFT_2);
 
 /**
@@ -134,7 +134,7 @@ void setMotor (motor_t m, int power) {
   if (power < POWER_DEADBAND && power > -POWER_DEADBAND) {
       analogWrite(m1, 255);
       analogWrite(m2, 255);
-  } else if (power > 0) {
+  } else if (power < 0) {
       analogWrite(m1, 255);
       analogWrite(m2, convertPower(power));
   } else {
@@ -262,6 +262,8 @@ void turn(double angle, turning_direction_t direction) {
   int encoderAverage;
   do {
     encoderAverage = (turnEncoder->read() - otherTurnEncoder->read()) / 2;
+    logf("%lu\n", turnEncoder->read());
+    delay(1);
   } while (turnEncoder->read() < target - ANGLE_TOLERANCE);
 
   // Stop both motors
@@ -423,6 +425,7 @@ int moveForward(int number) {
       // ((Num ticks of both wheels / 2) / num ticks per revolution) * PI * diameter 
       // Becomes revolutions * mm per revolution
       currentDistance = (((leftRevs + rightRevs) / 2.0) / (gearRatio * encoderTicks)) * PI * 2 * wheelRadius;
+      logf("Current Dist:\t%f\n", currentDistance);
     }
 
     // logf("Moving forward. current: %d, ultra: %d, goal: %d, cond: %d, %d\n", currentDistance, ultrasonic, goalDistance, ultrasonic < 150, ultrasonic > 95);
@@ -494,14 +497,14 @@ int moveForward(int number) {
     // p, current, goal, min, max
     // When the angle is 0.1, we need to bump left power by like 5, so P of 20
     // (A positive angle means that we're turned left)
-    angularVelocity = p_controller(80.0, currentAngle, 0, -127.0, 127.0);
+    angularVelocity = p_controller(40.0, currentAngle, 0, -127.0, 127.0);
 
     // With a distance of 254 (one square), we've chose a P of 12.25
     //  so it saturates velocity for the majority of the distance
-    velocity = p_controller(12.25, currentDistance, goalDistance, -speed, speed);
+    velocity = p_controller(6, currentDistance, goalDistance, -speed, speed);
 
     // With a center off set of 10mm, that's a velocity of 5
-    centerVelocity = p_controller(0.5, centerOffset, 0, -50, 50);
+    centerVelocity = p_controller(0.20, centerOffset, 0, -50, 50);
 
     angularVelocity += centerVelocity;
 
@@ -512,6 +515,17 @@ int moveForward(int number) {
     int velocityLeft = (int)(-angularVelocity / 2.0 * 0.7) + velocity;
     int velocityRight = (int)(angularVelocity / 2.0 * 0.7) + velocity;
 
+    // logf("Left: %d\n", velocityLeft);
+    // logf("Right: %d\n", velocityRight);
+    // logf("Angular: %f\n", angularVelocity);
+    // logf("centerVelocity: %f\n", centerVelocity);
+    // logf("velocity: %f\n", velocity);
+    // logf("Front: %d\n", forward);
+    // logf("FLeft: %d\n", front_left);
+    // logf("FRight: %d\n", front_right);
+    // logf("BLeft: %d\n", back_left);
+    // logf("BRight: %d\n", back_right);
+    // logf("Angle: %f\n", getAngle());
     setMotor(LEFT_MOTOR, velocityLeft);
     setMotor(RIGHT_MOTOR, velocityRight);
   }
@@ -575,8 +589,8 @@ void setup() {
   pinMode(MOTORRIGHT_1, OUTPUT);
   pinMode(MOTORRIGHT_2, OUTPUT);
 
-  setMotor(RIGHT_MOTOR, 0);
-  setMotor(LEFT_MOTOR, 0);
+  // setMotor(RIGHT_MOTOR, 0);
+  // setMotor(LEFT_MOTOR, 0);
 
   logln("Motors ready!");
 
@@ -656,7 +670,6 @@ void readLidar() {
 
 /* ---- MAIN ---- */
 void loop() {
-  // updateSensors();
-  // doRun();
-  greenLights();
+  updateSensors();
+  doRun();
 }
