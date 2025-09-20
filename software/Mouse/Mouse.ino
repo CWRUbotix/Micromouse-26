@@ -41,9 +41,9 @@ typedef enum motor_t {
 
 // The physical distance between the sensors
 // TODO: Chech that values are consistent with new robot
-#define LIDAR_SEPARATION_FB 40.8  // 39.9 mm between sensors front to back for Right Side
+#define LIDAR_SEPARATION_FB 40.0  // 39.9 mm between sensors front to back for Right Side
 // #define LIDAR_SEPARATION_FB_L 40.6 // 40.6 mm between sensors front to back for Left Side the one above is right side
-#define LIDAR_SEPARATION_LR 45.5  // 47 mm between sensors across robot
+#define LIDAR_SEPARATION_LR 46.3  // 47 mm between sensors across robot
 // boardwidth = 41.5
 
 
@@ -52,7 +52,7 @@ int speed = 20;
 
 const double encoderTicks = 12;
 const double gearRatio = 75;
-const double wheelSeparation = 75; // 7.5 cm between wheels
+const double wheelSeparation = 73.5; // 7.35 cm between wheels
 const double wheelRadius = 17.2; // 3.44 cm diameter
 const double turnRatio = (wheelSeparation / 2.0) / wheelRadius / 360 * gearRatio * encoderTicks; // degree to encoder tick conversion ratio
 
