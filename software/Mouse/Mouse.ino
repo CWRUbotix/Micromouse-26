@@ -242,7 +242,7 @@ void turn(double angle, turning_direction_t direction) {
     turnEncoder = &rightEncoder;
     otherTurnEncoder = &leftEncoder;
   } else {
-    // Turn righ
+    // Turn right
     turnEncoder = &leftEncoder;
     otherTurnEncoder = &rightEncoder;
     dir = -1;
@@ -281,17 +281,22 @@ void movingTurn(double angle, turning_direction_t direction) {
   Encoder *turnEncoder;
   Encoder *otherTurnEncoder;
 
+  // Calculate speeds so that both wheels arrive at target at the same time
   double turnRatio = (SQUARE_SIZE + wheelSeparation) / 2.0 / wheelRadius / 360 * gearRatio * encoderTicks; // degree to encoder tick conversion ratio
+  double otherTurnRatio = (SQUARE_SIZE - wheelSeparation) / 2.0 / wheelRadius / 360 * gearRatio * encoderTicks; // degree to encoder tick conversion ratio
 
   double target = angle * turnRatio;
+  double otherTarget = angle * otherTurnRatio;
 
-  double FAST_SPEED = 45.125 * (SQUARE_SIZE + wheelSeparation) / wheelSeparation * 0.35;
-  double SLOW_SPEED = 45.125 * (SQUARE_SIZE - wheelSeparation) / wheelSeparation * 0.35;
+  double time = ((target + otherTarget) / 2) / speed; // avgDistance / avgSpeed = time
+
+  double FAST_SPEED = target / time; // speed = distance / time
+  double SLOW_SPEED = otherTarget / time;
 
   if(direction == LEFT){
     turnEncoder = &rightEncoder;
     otherTurnEncoder = &leftEncoder;
-    target = target * 10.5 / 12; // correction
+    // target = target * 10.5 / 12; // correction
     turnEncoder->write(0);
     otherTurnEncoder->write(0);
     setMotor(RIGHT_MOTOR, FAST_SPEED);
@@ -300,7 +305,7 @@ void movingTurn(double angle, turning_direction_t direction) {
   else{
     turnEncoder = &leftEncoder;
     otherTurnEncoder = &rightEncoder;
-    target = target * 9 / 12; // correction
+    // target = target * 9 / 12; // correction
     turnEncoder->write(0);
     otherTurnEncoder->write(0);
     setMotor(RIGHT_MOTOR, SLOW_SPEED);
