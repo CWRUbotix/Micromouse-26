@@ -4,7 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Flag to enable logging
 // #define DEBUG
+// Flag to enable MMS integration
+// #define sim
 
 #ifdef DEBUG
   #define log(...) fprintf(stderr, __VA_ARGS__); fflush(stderr)
@@ -53,10 +56,11 @@ uint8_t yPos = 0;
 
 bool backtracking = false;
 
+// Recompute all node scores based on floodfill algorithm
 void floodFill(int goal[][2], int size) {
   logln("Flooding");
   #ifdef sim
-  clearAllText();
+    clearAllText();
   #endif
   // Next node to update
   Node *curr;
@@ -300,6 +304,7 @@ void rotateMove() {
   return;
 }
 
+// Create path to target based on floodfill node scores
 void createPath() {
   uint8_t dist;
   uint8_t x;
@@ -389,11 +394,11 @@ void moveOnPath() {
   moveForward(numSquares + 1);
 }
 
+// TODO: Change name to something more accurate, like "doIteration"
 void doRun() {
-  // put your main code here, to run repeatedly:
   updateWalls();
   #ifdef sim
-  // createPath();
+    createPath();
   #endif
   rotateMove();
 }

@@ -34,27 +34,34 @@ typedef enum motor_t {
   #define LOGGING 0
 #endif
 
+// Power deadband under which motors will not run
 #define POWER_DEADBAND 0
 
 #define LIDAR_COUNT 5
 #define LIDAR_ADDR_BASE 0x50
 
 // The physical distance between the sensors
-// TODO: Chech that values are consistent with new robot
+// TODO: Check that values are consistent with new robot
 #define LIDAR_SEPARATION_FB 40.0  // 39.9 mm between sensors front to back for Right Side
 // #define LIDAR_SEPARATION_FB_L 40.6 // 40.6 mm between sensors front to back for Left Side the one above is right side
 #define LIDAR_SEPARATION_LR 46.3  // 47 mm between sensors across robot
 // boardwidth = 41.5
 
-
+// Tolerance for turning function
 int ANGLE_TOLERANCE = 20;
+// Base speed for movement loop
 int speed = 20;
 
+// Encoder tick to rotation ratio
 const double encoderTicks = 12;
+// Motor gear ratio
 const double gearRatio = 75;
-const double wheelSeparation = 73.5; // 7.35 cm between wheels
-const double wheelRadius = 17.2; // 3.44 cm diameter
-const double turnRatio = (wheelSeparation / 2.0) / wheelRadius / 360 * gearRatio * encoderTicks; // degree to encoder tick conversion ratio
+// Distance between wheels in mm
+const double wheelSeparation = 73.5;
+// Radius of wheels in mm
+const double wheelRadius = 17.2;
+// Degree to encoder tick conversion ratio
+const double turnRatio = (wheelSeparation / 2.0) / wheelRadius / 360 * gearRatio * encoderTicks;
 
 // The LiDAR sensors return a running average of readings,
 //  so when we move past a wall, the LiDAR returns a value greater than the previous value but less than an overflow.
@@ -77,7 +84,9 @@ const int lidar_cs_pins[LIDAR_COUNT] = {LIDAR_FrontLeft, LIDAR_FrontRight, LIDAR
 
 Adafruit_VL6180X lidar_sensors[LIDAR_COUNT];
 
+// Flags to track out of range or otherwise errored sensors
 bool front_left_errored, front_right_errored, back_left_errored, back_right_errored, forward_errored;
+// Lidar sensor measurements
 uint8_t forward;
 uint8_t front_left;
 uint8_t front_right;
@@ -113,6 +122,7 @@ uint8_t convertPower(int8_t p) {
  *              Negative is "backward"
  */
 void setMotor (motor_t m, int power) {
+  // Ensure that power input is within bounds
   if (power < -127) {
     power = -127;
   }else if (power > 127) {
@@ -132,54 +142,91 @@ void setMotor (motor_t m, int power) {
   }
   // Set power
   if (power < POWER_DEADBAND && power > -POWER_DEADBAND) {
+      // If power is within deadband, stop motors
       analogWrite(m1, 255);
       analogWrite(m2, 255);
   } else if (power < 0) {
+      // If power is negative, run wheel backward
       analogWrite(m1, 255);
       analogWrite(m2, convertPower(power));
   } else {
+      // If power is positive, run wheel forward
       analogWrite(m1, convertPower(power));
       analogWrite(m2, 255);
   }
 }
 
+/**
+ * Detect whether left wall is present
+ *
+ * @return Boolean wall detection value
+ */
 int wallLeft() {
+  // Read front left sensor distance
   front_left = lidar_sensors[0].readRange();
   logf("Left: %d\n", !(lidar_sensors[0].readRangeStatus() != VL6180X_ERROR_NONE || front_left > SENSOR_RANGE_MAX));
+  // If sensor is not errored and within range, detect wall
   return !(lidar_sensors[0].readRangeStatus() != VL6180X_ERROR_NONE || front_left > SENSOR_RANGE_MAX);
 }
 
+/**
+ * Detect whether right wall is present
+ *
+ * @return Boolean wall detection value
+ */
 int wallRight() {
+  // Read front right sensor distance
   front_right = lidar_sensors[1].readRange();
   logf("Right: %d\n", !(lidar_sensors[1].readRangeStatus() != VL6180X_ERROR_NONE || front_right > SENSOR_RANGE_MAX));
+  // If sensor is not errored and within range, detect wall
   return !(lidar_sensors[1].readRangeStatus() != VL6180X_ERROR_NONE || front_right > SENSOR_RANGE_MAX);
 }
 
+/**
+ * Detect whether front wall is present
+ *
+ * @return Boolean wall detection value
+ */
 int wallFront() {
+  // Read front sensor distance
   forward = lidar_sensors[4].readRange();
   logf("Front: %d\n", !(lidar_sensors[4].readRangeStatus() != VL6180X_ERROR_NONE || forward > SENSOR_RANGE_MAX));
+  // If sensor is not errored and within range, detect wall
   return !(lidar_sensors[4].readRangeStatus() != VL6180X_ERROR_NONE || forward > SENSOR_RANGE_MAX);
 }
 
+/**
+ * Update all sensors and error flags
+ */
 void updateSensors () {
-  // Read the right LIDAR sensors and update their values
+  // Read the right LIDAR sensors and update their values (including error flags)
   back_right = lidar_sensors[1].readRange();
   back_right_errored = lidar_sensors[1].readRangeStatus() != VL6180X_ERROR_NONE || back_right > SENSOR_RANGE_MAX;
   front_right = lidar_sensors[3].readRange();
   front_right_errored = lidar_sensors[3].readRangeStatus() != VL6180X_ERROR_NONE || front_right > SENSOR_RANGE_MAX;
 
-  // Read the left LIDAR sensors and update their values
+  // Read the left LIDAR sensors and update their values (including error flags)
   back_left = lidar_sensors[0].readRange();
   back_left_errored = lidar_sensors[0].readRangeStatus() != VL6180X_ERROR_NONE || back_left > SENSOR_RANGE_MAX;
   front_left = lidar_sensors[2].readRange();
   front_left_errored = lidar_sensors[2].readRangeStatus() != VL6180X_ERROR_NONE || front_left > SENSOR_RANGE_MAX;
 
-  // Read the front short LIDAR sensor and update its value
+  // Read the front short LIDAR sensor and update its value (including error flag)
   forward = lidar_sensors[4].readRange();
   forward_errored = lidar_sensors[4].readRangeStatus() != VL6180X_ERROR_NONE || forward > SENSOR_RANGE_MAX;
 }
 
 // p_controller(80.0, currentAngle, 0, -127.0, 127.0);
+/**
+ * Detect whether front wall is present
+ *
+ * @param p Output factor for p controller
+ * @param current Current value for controller
+ * @param goal Target value for controller
+ * @param min Minimum output power
+ * @param max Maximum output power
+ * @return Output power [-127..127]
+ */
 double p_controller(double p, double current, double goal, double min, double max) {
   double out = (goal - current) * p;
   if (out > max) {
@@ -191,14 +238,16 @@ double p_controller(double p, double current, double goal, double min, double ma
 }
 
 /**
- * Counter-clockwise is a positive angle
- * @return angle given by lidar sensors
+ * Get current robot angle from side LiDAR sensors
+ * 
+ * @return Angle calculated from LiDAR sensors [-pi..pi]
+ *         Angle reported in radians
+ *         Positive is counter-clockwise
  */
-
 double getAngle()
 {
   // arctan((lidarDistanceBL - lidarDistanceFL) / lidarSeparation);
-  // Average left and right sensors
+  // Calculate robot angle from left and right side LiDAR sensors
   double leftAngle = -atan2(front_left - back_left, LIDAR_SEPARATION_FB);
   double rightAngle = atan2(front_right - back_right, LIDAR_SEPARATION_FB);
   // logf("left angle: %f\tright angle: %f; ", leftAngle * 180.0 / PI, rightAngle * 180.0 / PI);
@@ -208,12 +257,15 @@ double getAngle()
     // logf("Using 0 as angle\n");
     return 0;
   } else if (back_left_errored || front_left_errored) {
+    // If left sensors errored, use angle from right sensors
     // logf("Using right angle\n");
     return rightAngle;
   } else if (back_right_errored || front_right_errored) {
+    // If right sensors errored, use angle from left sensors
     // logf("Using left angle\n");
     return leftAngle;
   } else {
+    // If all sensors are not errored, average values
     // logf("Averaging angles\n");
     return (leftAngle + rightAngle) / 2;
   }
@@ -222,7 +274,8 @@ double getAngle()
 /**
  * Turn robot by a given angle in place
  *
- * @param angle     The angle to turn (in degrees)
+ * @param angle     The angle to turn [-180..180]
+ *                  Angle input in degrees
  * @param direction The direction to turn (LEFT or RIGHT)
  */
 void turn(double angle, turning_direction_t direction) {
@@ -230,7 +283,7 @@ void turn(double angle, turning_direction_t direction) {
   Encoder *turnEncoder;
   Encoder *otherTurnEncoder;
 
-  // target point
+  // Target encoder value
   double target = angle * turnRatio;
 
   // Direction constant
@@ -242,12 +295,13 @@ void turn(double angle, turning_direction_t direction) {
     turnEncoder = &rightEncoder;
     otherTurnEncoder = &leftEncoder;
   } else {
-    // Turn righ
+    // Turn right
     turnEncoder = &leftEncoder;
     otherTurnEncoder = &rightEncoder;
     dir = -1;
   }
 
+  // Zero out encoders
   turnEncoder->write(0);
   otherTurnEncoder->write(0);
 
@@ -255,10 +309,10 @@ void turn(double angle, turning_direction_t direction) {
   // Scale by 0.7 to compensate for over-volted motors
   setMotor(RIGHT_MOTOR, 45.125 * dir * 0.7);
   // Turn left wheel forwards if left, backwards if right
+  // Scale by 0.7 to compensate for over-volted motors
   setMotor(LEFT_MOTOR, -45.125 * dir * 0.7);
 
-  // Turn until within margin of error
-
+  // Turn until average encoder measurement is within margin of error
   int encoderAverage;
   do {
     encoderAverage = (turnEncoder->read() - otherTurnEncoder->read()) / 2;
@@ -273,25 +327,32 @@ void turn(double angle, turning_direction_t direction) {
 
 /**
  * Turn robot by a given angle along a circular path
- * 
- * @param angle     The angle to turn (in degrees)
- * @param direction The direction to turn (LEFT/RIGHT)
+ *
+ * @param angle     The angle to turn [-180..180]
+ *                  Angle input in degrees
+ * @param direction The direction to turn (LEFT or RIGHT)
  */
 void movingTurn(double angle, turning_direction_t direction) {
   Encoder *turnEncoder;
   Encoder *otherTurnEncoder;
 
-  double turnRatio = (SQUARE_SIZE + wheelSeparation) / 2.0 / wheelRadius / 360 * gearRatio * encoderTicks; // degree to encoder tick conversion ratio
+  // Modified degree to encoder tick conversion ratio for adjusted rotation path
+  double turnRatio = (SQUARE_SIZE + wheelSeparation) / 2.0 / wheelRadius / 360 * gearRatio * encoderTicks;
 
+  // Target encoder value
   double target = angle * turnRatio;
 
+  // Faster wheel speed for outside of turning path
   double FAST_SPEED = 45.125 * (SQUARE_SIZE + wheelSeparation) / wheelSeparation * 0.35;
+  // Slower wheel speed for inside of turning path
   double SLOW_SPEED = 45.125 * (SQUARE_SIZE - wheelSeparation) / wheelSeparation * 0.35;
 
   if(direction == LEFT){
     turnEncoder = &rightEncoder;
     otherTurnEncoder = &leftEncoder;
-    target = target * 10.5 / 12; // correction
+    // Correction for motor imbalance
+    target = target * 10.5 / 12;
+    // Zero out encoders
     turnEncoder->write(0);
     otherTurnEncoder->write(0);
     setMotor(RIGHT_MOTOR, FAST_SPEED);
@@ -300,17 +361,21 @@ void movingTurn(double angle, turning_direction_t direction) {
   else{
     turnEncoder = &leftEncoder;
     otherTurnEncoder = &rightEncoder;
-    target = target * 9 / 12; // correction
+    // Correction for motor imbalance
+    target = target * 9 / 12;
+    // Zero out encoders
     turnEncoder->write(0);
     otherTurnEncoder->write(0);
     setMotor(RIGHT_MOTOR, SLOW_SPEED);
     setMotor(LEFT_MOTOR, FAST_SPEED);
   }
 
+  // Turn until average encoder measurement is within margin of error
   do {
     // wait
   } while (turnEncoder->read() < target - ANGLE_TOLERANCE);
 
+  // Stop both motors
   setMotor(RIGHT_MOTOR, 0);
   setMotor(LEFT_MOTOR, 0);
 }
@@ -352,45 +417,64 @@ void movingTurn(double angle, turning_direction_t dir){
   setMotor(LEFT_MOTOR, 0);
 }*/
 
-// Rotate 90 degrees right
+/**
+ * Rotate 90 degrees right
+ */
 void turnRight(){
   logln("Turning Right");
   turn(90.0 + getAngle() * 180.0 / PI, RIGHT);
 }
 
-// Rotate 90 degrees left
+/**
+ * Rotate 90 degrees left
+ */
 void turnLeft(){
   logln("Turning Left");
   turn(90.0 - getAngle() * 180.0 / PI, LEFT);
 }
 
-// Rotate 90 degrees right while moving forward
+/**
+ * Rotate 90 degrees right while moving forward
+ */
 void movingTurnRight(){
   logln("Moving Turn Right");
   movingTurn(90.0 + getAngle() * 180.0 / PI, RIGHT);
 }
 
-// Rotate 90 degrees left while moving forward
+/**
+ * Rotate 90 degrees left while moving forward
+ */
 void movingTurnLeft(){
   logln("Moving Turn Left");
   movingTurn(90.0 - getAngle() * 180.0 / PI, LEFT);
 }
 
-// Rotate 45 degrees right
+/**
+ * Rotate 45 degrees right
+ */
 void turnRight45(){
   turn(45.0 + getAngle() * 180.0 / PI, RIGHT);
 }
 
-// Rotate 45 degrees left
+/**
+ * Rotate 45 degrees left
+ */
 void turnLeft45(){
   turn(45.0 - getAngle() * 180.0 / PI, LEFT);
 }
 
+/**
+ * Rotate 180 degrees
+ */
 void turn180(){
   turn(180.0 - getAngle() * 180.0 / PI, LEFT);
 }
 
-// Moves the robot forward 1 square in the direction the robot is currently facing
+/**
+ * Move forward a specified number of squares
+ * 
+ * @param number The number of squares to move
+ */
 int moveForward(int number) {
   // Reset encoders
   leftEncoder.write(0);
@@ -399,39 +483,38 @@ int moveForward(int number) {
   // Create angle variables
   double currentAngle, angularVelocity;
 
-  // Create speed variables
-  // (currentDistance is the distance inside the current square.)
+  // Track current position
   double currentDistance = 0;
+  // Set goal distance as a multiple of the square size
   double goalDistance = SQUARE_SIZE * number;
+  // Create speed variable
   double velocity;
 
   // Center variables
   double centerVelocity, centerOffset;
 
-  // loop quickly
+  // Loop until goal distance is reached
   while (1) {
-    // update currentDistance and currentAngle
+    // Update currentDistance and currentAngle
     {
-      // read LiDARs
+      // Update LiDAR sensor readings
       updateSensors();
       // Update angle
       currentAngle = getAngle();
 
-      // Update current distance
-      // 4560 ticks per revolution (380:1 gearbox * 12 ticks per rev normally)
-      // num revolutions * pi * diameter
+      // Update encoder readings
       long leftRevs = leftEncoder.read();
       long rightRevs = rightEncoder.read();
-      // ((Num ticks of both wheels / 2) / num ticks per revolution) * PI * diameter 
-      // Becomes revolutions * mm per revolution
+      // Update current distance
+      // ((Num ticks of both wheels / 2) / num ticks per revolution) * PI * wheel diameter
       currentDistance = (((leftRevs + rightRevs) / 2.0) / (gearRatio * encoderTicks)) * PI * 2 * wheelRadius;
       logf("Current Dist:\t%f\n", currentDistance);
     }
 
     // logf("Moving forward. current: %d, ultra: %d, goal: %d, cond: %d, %d\n", currentDistance, ultrasonic, goalDistance, ultrasonic < 150, ultrasonic > 95);
 
-    // We're also not allowed to break out of the loop (stop going forward), if we're farther than 95 mm from a wall
-    // If we think we're there, but we're not, go farther
+    // Prevent breaking out of the loop if farther than 95 mm from a wall
+    // If robot has reached internal goal distance, increment goal distance to go farther
     if (currentDistance >= goalDistance && forward < 150 && forward > 95) {
       logf("Moving goalDistance forward.\n");
       // Increase goal distance such that the forward ends up (60mm) away from the wall in front of us
@@ -439,9 +522,8 @@ int moveForward(int number) {
       redLights();
     }
 
-    // check if currentDistance and currentAngle are within tolerance
-    // For the lidar, 60 is 60 mm from the wall. This is about
-    // the distance when the robot is centered in the tile
+    // Check if currentDistance and currentAngle are within tolerance of target, breaking out of loop if so
+    // For the lidar, 60 is 60 mm from the wall (approximately centered in the square)
     if (currentDistance >= goalDistance || (!forward_errored && forward < LIDAR_FRONT_TARGET)) {
       setMotor(LEFT_MOTOR, 0);
       setMotor(RIGHT_MOTOR, 0);
@@ -479,38 +561,45 @@ int moveForward(int number) {
     //              MAZE WIDTH - R
     // ERROR = X - ----------------
     //                    2
+    // Compute offset as difference between left and right side sensors
+    // TODO: Check whether this should be divided by 2
     centerOffset = (double)front_right - (double)front_left;
     if (front_left_errored && front_right_errored) {
+        // If both sensors are errored, assume centered
         // logf("both errored, setting offset to 0\n");
         centerOffset = 0;
     }else if (front_left_errored) {
-        // If we don't have a left value
+        // If we don't have a left value, compute offset from right sensor value only
         // (We're targeting to an offset of 0)
         // sensors are 84 mm apart, maze is 240mm wide
         centerOffset = (double)front_right - (240 - LIDAR_SEPARATION_LR) / 2.0;
     }else if (front_right_errored) {
+        // If we don't have a right value, compute offset from left sensor value only
         centerOffset = (240 - LIDAR_SEPARATION_LR) / 2.0 - (double)front_left;
     }
 
     // logf("left %d; right %d: center offset: %f\n", front_left, front_right, centerOffset);
 
-    // p, current, goal, min, max
+    // Compute correction for robot angle
     // When the angle is 0.1, we need to bump left power by like 5, so P of 20
     // (A positive angle means that we're turned left)
     angularVelocity = p_controller(40.0, currentAngle, 0, -127.0, 127.0);
 
+    // Compute base velocity for forward movement
     // With a distance of 254 (one square), we've chose a P of 12.25
-    //  so it saturates velocity for the majority of the distance
+    // so it saturates velocity for the majority of the distance
     velocity = p_controller(6, currentDistance, goalDistance, -speed, speed);
 
+    // Compute correction for horizontal displacement from centerline
     // With a center off set of 10mm, that's a velocity of 5
     centerVelocity = p_controller(0.20, centerOffset, 0, -50, 50);
 
+    // Sume correction velocities
     angularVelocity += centerVelocity;
 
     // NOTE: We're assuming that at angles close to 0, angularVelocity has a linear relationship with velocity.
 
-    // update motor values
+    // Update motor speeds
     // Scale by 0.7 to compensate for over-volted motors
     int velocityLeft = (int)(-angularVelocity / 2.0 * 0.7) + velocity;
     int velocityRight = (int)(angularVelocity / 2.0 * 0.7) + velocity;
