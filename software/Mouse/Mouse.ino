@@ -11,16 +11,18 @@
 #include "micromouse_pins_2023.h"
 // Robot Logic and Algorithm definitions
 #include "Algo/FMicro.cpp"
+#include "PID_v1.h"
 /* ---- Defines ---- */
 typedef enum motor_t {
-  LEFT_MOTOR = 0,
-  RIGHT_MOTOR = 1
+    LEFT_MOTOR = 0,
+    RIGHT_MOTOR = 1
 } motor_t;
 
 #define TEST
 #undef log
 #undef logf
 #undef logln
+// #define PLOT_PID
 
 #ifdef TEST
   #define log(...) Serial.print(__VA_ARGS__)
@@ -95,6 +97,18 @@ uint8_t back_right;
 
 Encoder rightEncoder (ENCODER_RIGHT_2, ENCODER_RIGHT_1);
 Encoder leftEncoder (ENCODER_LEFT_1, ENCODER_LEFT_2);
+
+// TurnPID constants
+double setTurnSpeed = 0;
+volatile double currentAngle;
+volatile double targetAngle = 0;
+volatile double targetTurnSpeed = 0;
+IntervalTimer myTimer;
+PID angularPID(&currentAngle, &targetTurnSpeed, &targetAngle, 1.7, 0, 0.07, DIRECT);
+Encoder *turnEncoder;
+Encoder *otherTurnEncoder;
+
+const int loopTime = 100; //ms
 
 /**
  * Convert a value in range [-127..127] to a motor power value
@@ -283,9 +297,6 @@ void turn(double angle, turning_direction_t direction) {
   Encoder *turnEncoder;
   Encoder *otherTurnEncoder;
 
-  // Target encoder value
-  double target = angle * turnRatio;
-
   // Direction constant
   int dir = 1;
 
@@ -301,28 +312,83 @@ void turn(double angle, turning_direction_t direction) {
     dir = -1;
   }
 
-  // Zero out encoders
+  // target point
+  double target = angle * turnRatio * dir;
+
   turnEncoder->write(0);
   otherTurnEncoder->write(0);
 
-  // Turn right wheel backwards if left, forwards if right
-  // Scale by 0.7 to compensate for over-volted motors
-  setMotor(RIGHT_MOTOR, 45.125 * dir * 0.7);
-  // Turn left wheel forwards if left, backwards if right
-  // Scale by 0.7 to compensate for over-volted motors
-  setMotor(LEFT_MOTOR, -45.125 * dir * 0.7);
+  // Turn until within margin of error
 
-  // Turn until average encoder measurement is within margin of error
-  int encoderAverage;
+  double encoderAverage;
+  double angularVelocity;
+
+  // Setup Angular PID
+  PID angularVelocityPID(&encoderAverage, &angularVelocity, &target, 0.075, 0.01, 0, DIRECT);
+  angularVelocityPID.SetOutputLimits(-45.125, 45.125);
+  angularVelocityPID.SetMode(AUTOMATIC);
+
   do {
     encoderAverage = (turnEncoder->read() - otherTurnEncoder->read()) / 2;
-    logf("%lu\n", turnEncoder->read());
-    delay(1);
-  } while (turnEncoder->read() < target - ANGLE_TOLERANCE);
+
+    // Calculate new PID value
+    angularVelocityPID.Compute();
+
+    // Turn right wheel backwards if left, forwards if right
+    // Scale by 0.7 to compensate for over-volted motors
+    setMotor(RIGHT_MOTOR, 0.7 * max(abs(angularVelocity), 22) * dir);
+    // Turn left wheel forwards if left, backwards if right
+    setMotor(LEFT_MOTOR, -0.7 * max(abs(angularVelocity), 22) * dir);
+
+    #ifdef PLOT_PID
+      Serial.print("Angular Velocity PID Out:");
+      Serial.print(angularVelocity/45.125);
+      Serial.print("Error Out:");
+      Serial.print(target-encoderAverage);
+    #endif
+
+  } while (encoderAverage < abs(target) - ANGLE_TOLERANCE);
+  
+  // Turn off PID
+  angularVelocityPID.SetMode(MANUAL);
 
   // Stop both motors
   setMotor(RIGHT_MOTOR, 0);
   setMotor(LEFT_MOTOR, 0);
+}
+
+
+void setupTurnPID() {
+  // Setup Angular PID
+  angularPID.SetOutputLimits(-45.125, 45.125);
+  angularPID.SetMode(AUTOMATIC);
+}
+
+/**
+ * Calculate the next speed to set the motors to
+ * 
+ * @param setSpeed  The current target speed in deg/s
+ */
+void calculateTurn() {
+  // Get targetAngle
+  targetAngle += setTurnSpeed * loopTime/1000;
+
+  // Get currentAngle
+  double encoderDifference = turnEncoder->read() - otherTurnEncoder->read();
+  currentAngle = encoderDifference / turnRatio / 2; // In degrees
+
+  // Update angularVoltage
+  angularPID.Compute();
+
+  // Set motors
+  setMotor(RIGHT_MOTOR, targetTurnSpeed);
+  setMotor(LEFT_MOTOR, -targetTurnSpeed);
+
+  logln("");
+  logln(targetTurnSpeed);
+  logln(targetAngle-currentAngle);
+
+  // return angularVoltage;
 }
 
 /**
@@ -493,7 +559,26 @@ int moveForward(int number) {
   // Center variables
   double centerVelocity, centerOffset;
 
-  // Loop until goal distance is reached
+  // Create pid controllers
+  // With a distance of 254 (one square), we've chose a P of 12.25
+  // so it saturates velocity for the majority of the distance
+  PID velocityPID(&currentDistance, &velocity, &goalDistance, 12.25, 0, 0, DIRECT);
+  velocityPID.SetOutputLimits(-speed, speed);
+  velocityPID.SetMode(AUTOMATIC);
+
+  // p, current, goal, min, max
+  // When the angle is 0.1, we need to bump left power by like 5, so P of 20
+  // (A positive angle means that we're turned left)
+  PID angularVelocityPID(&currentAngle, &angularVelocity, 0, 80.0, 0, 0, DIRECT);
+  angularVelocityPID.SetOutputLimits(-127, 127);
+  angularVelocityPID.SetMode(AUTOMATIC);
+
+  // With a center offset of 10mm, that's a velocity of 5
+  PID centerVelocityPID(&centerOffset, &centerVelocity, 0, 0.5, 0, 0, DIRECT);
+  centerVelocityPID.SetOutputLimits(-50, 50);
+  centerVelocityPID.SetMode(AUTOMATIC);
+
+  // loop quickly
   while (1) {
     // Update currentDistance and currentAngle
     {
@@ -530,6 +615,11 @@ int moveForward(int number) {
       logf("Stopped. Long Range Lidar: %d, %d, %lf\n", !forward_errored, forward < LIDAR_FRONT_TARGET, forward);
       if(digitalRead(RED_LED) == HIGH)
         digitalWrite(RED_LED, LOW);
+      // Disable PID controllers
+      angularVelocityPID.SetMode(MANUAL);
+      velocityPID.SetMode(MANUAL);
+      centerVelocityPID.SetMode(MANUAL);
+
       greenLights();
       greenLights();
       break;
@@ -583,16 +673,30 @@ int moveForward(int number) {
     // Compute correction for robot angle
     // When the angle is 0.1, we need to bump left power by like 5, so P of 20
     // (A positive angle means that we're turned left)
-    angularVelocity = p_controller(40.0, currentAngle, 0, -127.0, 127.0);
+    // angularVelocity = p_controller(80.0, currentAngle, 0, -127.0, 127.0);
+    #ifdef PLOT_PID
+      Serial.print("Angular Velocity PID Out:");
+      Serial.print(angularVelocity);
+      Serial.print(",")
+    #endif
 
     // Compute base velocity for forward movement
     // With a distance of 254 (one square), we've chose a P of 12.25
-    // so it saturates velocity for the majority of the distance
-    velocity = p_controller(6, currentDistance, goalDistance, -speed, speed);
+    //  so it saturates velocity for the majority of the distance
+    // velocity = p_controller(12.25, currentDistance, goalDistance, -speed, speed);
+    #ifdef PLOT_PID
+      Serial.print("Velocity (Forward) PID Out:");
+      Serial.print(velocity);
+      Serial.print(",")
+    #endif
 
-    // Compute correction for horizontal displacement from centerline
     // With a center off set of 10mm, that's a velocity of 5
-    centerVelocity = p_controller(0.20, centerOffset, 0, -50, 50);
+    // centerVelocity = p_controller(0.5, centerOffset, 0, -50, 50);
+    #ifdef PLOT_PID
+      Serial.print("Velocity (Lateral) PID Output:");
+      Serial.print(centerVelocity);
+      Serial.print(",")
+    #endif
 
     // Sume correction velocities
     angularVelocity += centerVelocity;
@@ -724,6 +828,15 @@ void setup() {
   }else {
   }
   delay(500);
+
+  turnEncoder = &rightEncoder;
+  otherTurnEncoder = &leftEncoder;
+  turnEncoder->write(0);
+  otherTurnEncoder->write(0);
+  setupTurnPID();
+  myTimer.begin(calculateTurn, loopTime*1000);
+  logln("PID ready!");
+
   digitalWrite(LED0, LOW);
   digitalWrite(LED1, LOW);
   digitalWrite(LED2, LOW);
